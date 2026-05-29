@@ -2,6 +2,7 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
+import requests
 
 # 1. 웹 페이지 기본 설정
 st.set_page_config(page_title="Corporate Financial Analysis Tool", layout="wide")
@@ -54,22 +55,36 @@ if "selected_ticker" in st.session_state and st.session_state["selected_ticker"]
     ticker_final = st.session_state["selected_ticker"]
 
 
-# --- [수정] 야후 파이낸스 차단 우회 및 직렬화 에러를 방지하는 데이터 로더 ---
+# --- [🚨 핵심 패치] 야후 파이낸스 서버 차단 우회용 세션 커스텀 함수 ---
+def get_headers_session():
+    session = requests.Session()
+    # 브라우저인 것처럼 속여 야후 파이낸스 서버 차단을 우회하는 헤더 설정
+    session.headers.update({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+    })
+    return session
+
+
+# --- UnserializableReturnValueError 해결을 위한 cache_data 커스텀 래퍼 ---
 @st.cache_data(ttl=3600)
 def load_financial_data(ticker_symbol):
     try:
-        # 안전하게 Ticker 데이터를 가져오기 위해 구조화
-        stock = yf.Ticker(ticker_symbol)
+        custom_session = get_headers_session()
+        stock = yf.Ticker(ticker_symbol, session=custom_session)
         
-        # 순수 데이터프레임만 캐싱에 저장 (객체 자체를 리턴하지 않음)
+        # 캐싱이 가능한 순수 데이터프레임만 추출
         balance_sheet = stock.balance_sheet
         financials = stock.financials
         
-        # info 딕셔너리 안전하게 로드
+        if balance_sheet is None or balance_sheet.empty or financials is None or financials.empty:
+            return None, None, {}, ticker_symbol, False
+            
+        # 가벼운 딕셔너리 형태로 필요한 정보만 구조화
         info_dict = stock.info
         comp_name = info_dict.get('longName', ticker_symbol)
         
-        # 필요한 마켓 멀티플 지표들 추출
         market_metrics = {
             'trailingEps': info_dict.get('trailingEps', 0.0),
             'forwardEps': info_dict.get('forwardEps', 0.0),
@@ -82,17 +97,15 @@ def load_financial_data(ticker_symbol):
             'enterpriseToEbitda': info_dict.get('enterpriseToEbitda', 0.0)
         }
         
-        if balance_sheet.empty or financials.empty:
-            return None, None, {}, ticker_symbol, False
-            
         return balance_sheet, financials, market_metrics, comp_name, True
     except Exception as e:
         return None, None, {}, ticker_symbol, False
 
+# 데이터 로드 실행
 balance_sheet, financials, market_metrics, comp_name, success = load_financial_data(ticker_final)
 
 if not success or balance_sheet is None or balance_sheet.empty:
-    st.error(f"⚠️ Could not find sufficient financial data for '{ticker_final}'. Please verify the ticker or try again later.")
+    st.error(f"⚠️ Could not find sufficient financial data for '{ticker_final}'. 야후 파이낸스 서버 응답이 지연되고 있습니다. 잠시 후 새로고침(R)을 눌러주세요.")
 else:
     # --- 관심종목 추가/제거 컨트롤 ---
     head_col1, head_col2 = st.columns([3, 1])
@@ -252,7 +265,7 @@ else:
         dtl_cur = dol_cur * dfl_cur
         dtl_pri = dol_pri * dfl_pri
 
-        # 사전 추출된 market_metrics 딕셔너리 활용
+        # 사전 추출된 market_metrics 딕셔너리 안전하게 매핑
         shares_out = market_metrics.get('sharesOutstanding', 1.0)
         eps_cur = market_metrics.get('trailingEps', 0.0) or (net_cur / shares_out)
         eps_pri = market_metrics.get('forwardEps', 0.0) or (net_pri / shares_out)
