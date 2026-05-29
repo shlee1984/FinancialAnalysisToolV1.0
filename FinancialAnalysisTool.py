@@ -7,7 +7,6 @@ import requests
 # 1. 웹 페이지 기본 설정 및 모바일 맞춤형 CSS 주입
 st.set_page_config(page_title="Corporate Financial Analysis Tool", layout="wide")
 
-# 모바일 환경에서 표와 글자가 찌그러지지 않도록 미디어 쿼리(CSS) 적용
 st.markdown("""
     <style>
     /* 전체 폰트 스케일링 최적화 */
@@ -15,7 +14,7 @@ st.markdown("""
         font-size: 15px !important;
     }
     
-    /* 모바일(화면 너비 768px 이하)에서 테이블 가로 스크롤 허용 및 글자 크기 조정 */
+    /* 모바일(화면 너비 768px 이하)에서 글자 크기 및 테이블 가동성 조정 */
     @media (max-width: 768px) {
         .stDataFrame div {
             font-size: 12px !important;
@@ -29,7 +28,6 @@ st.markdown("""
         h3 {
             font-size: 1.1rem !important;
         }
-        /* 모바일에서 버튼 간격 좁히기 */
         .stButton button {
             padding: 0.25rem 0.5rem !important;
             font-size: 13px !important;
@@ -38,6 +36,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# --- 타이틀 및 서브 타이틀 ---
 st.title("📊 Corporate Financial Analysis Tool")
 st.caption("Advanced Financial Diagnostics System - Comprehensive 10-Q/10-K Structural Mapping")
 st.markdown("---")
@@ -46,44 +45,50 @@ st.markdown("---")
 if "watchlist" not in st.session_state:
     st.session_state.watchlist = ["AAPL", "TSLA", "NVDA", "MSFT"]
 
-# 2. 사이드바 - 검색 및 데이터 로드 설정
-st.sidebar.header("Search Configuration")
-search_type = st.sidebar.radio("Select Search Method:", ["By Ticker", "By Company Name"])
+# --- 검색창 영역 메인 상단 배치 ---
+search_col1, search_col2 = st.columns([1, 2])
+
+with search_col1:
+    search_type = st.radio("Select Search Method:", ["By Ticker", "By Company Name"], horizontal=True)
 
 ticker_final = "AAPL"  # 기본값
 
-if search_type == "By Ticker":
-    ticker_input = st.sidebar.text_input("Enter US Stock Ticker:", "AAPL").upper().strip()
-    ticker_final = ticker_input
-else:
-    company_input = st.sidebar.text_input("Enter Company Name (e.g., Apple, Tesla, Nvidia):", "Apple").strip()
-    
-    if company_input:
-        with st.sidebar.spinner("Searching for ticker..."):
+with search_col2:
+    if search_type == "By Ticker":
+        ticker_input = st.text_input("Enter US Stock Ticker:", "AAPL", label_visibility="collapsed").upper().strip()
+        ticker_final = ticker_input
+    else:
+        company_input = st.text_input("Enter Company Name (e.g., Apple, Tesla):", "Apple", label_visibility="collapsed").strip()
+        
+        if company_input:
             try:
                 search_results = yf.Search(company_input, max_results=5).quotes
                 us_quotes = [q for q in search_results if q.get('exchange') in ['NMS', 'NYQ', 'ASE', 'BTS', 'NGM', 'NCM']]
                 target_quotes = us_quotes if us_quotes else search_results
                 
                 if target_quotes:
-                    options = {f"{q['symbol']} - {q.get('longname', q.get('shortname', 'Unknown'))} ({q.get('exchange', '')})": q['symbol'] for q in target_quotes}
-                    selected_display = st.sidebar.selectbox("Select the exact company:", list(options.keys()))
+                    options = {f"{q['symbol']} - {q.get('longname', q.get('shortname', 'Unknown'))}": q['symbol'] for q in target_quotes}
+                    selected_display = st.selectbox("Select exact company:", list(options.keys()), label_visibility="collapsed")
                     ticker_final = options[selected_display]
                 else:
-                    st.sidebar.error("❌ No companies found. Try another keyword.")
+                    st.error("❌ No companies found.")
             except Exception as e:
-                st.sidebar.error("⚠️ Error searching company name.")
+                st.error("⚠️ Error searching company name.")
 
-# --- 사이드바 관심종목 클릭 처리 ---
-st.sidebar.markdown("---")
-st.sidebar.subheader("⭐ My Watchlist (Max 10)")
+# --- 메인 화면 상단 "My Watchlist" 수평 배치 ---
+st.markdown("##### ⭐ My Watchlist")
+watchlist_cols = st.columns(min(len(st.session_state.watchlist), 5))
 
-for ticker in st.session_state.watchlist[:10]:
-    if st.sidebar.button(f"📌 {ticker}", key=f"wl_{ticker}", use_container_width=True):
-        st.session_state["selected_ticker"] = ticker
+for idx, ticker in enumerate(st.session_state.watchlist[:10]):
+    col_idx = idx % 5
+    with watchlist_cols[col_idx % len(watchlist_cols)]:
+        if st.button(f"📌 {ticker}", key=f"wl_{ticker}", use_container_width=True):
+            st.session_state["selected_ticker"] = ticker
 
 if "selected_ticker" in st.session_state and st.session_state["selected_ticker"] in st.session_state.watchlist:
     ticker_final = st.session_state["selected_ticker"]
+
+st.markdown("---")
 
 
 # --- 야후 파이낸스 차단 우회용 가상 세션 헤더 설정 ---
@@ -99,8 +104,8 @@ def get_highly_secure_session():
     return session
 
 
-# --- 캐싱 시스템 (UnserializableReturnValueError 원천 차단) ---
-@st.cache_resource(ttl=600)
+# --- 캐싱 시스템 (UnserializableReturnValueError 현상 해결) ---
+@st.cache_resource(ttl=300)
 def load_financial_data(ticker_symbol):
     try:
         secure_session = get_highly_secure_session()
@@ -142,24 +147,22 @@ def load_financial_data(ticker_symbol):
 balance_sheet, financials, market_metrics, comp_name, success = load_financial_data(ticker_final)
 
 if not success or balance_sheet is None or balance_sheet.empty:
-    st.error(f"⚠️ Could not find sufficient financial data for '{ticker_final}'. 야후 파이낸스 서버가 일시적으로 연결을 제한했습니다. 사이드바에서 다른 종목을 클릭하시거나 잠시 후 새로고침(Ctrl + R)을 해주세요.")
+    st.error(f"⚠️ Could not find sufficient financial data for '{ticker_final}'. 야후 파이낸스 서버 보호막 작동으로 응답이 일시 차단되었습니다. 다른 관심종목 단추를 터치하시거나 잠시 후 페이지를 새로고침 해주세요.")
 else:
-    # --- 관심종목 추가/제거 컨트롤 (모바일 대응을 위해 컬럼 비율 조정) ---
-    head_col1, head_col2 = st.columns([2, 1])
+    # --- 관심종목 추가/제거 컨트롤 ---
+    head_col1, head_col2 = st.columns([3, 1])
     with head_col1:
-        st.header(f"{comp_name} ({ticker_final})")
+        st.subheader(f"📈 {comp_name} ({ticker_final})")
     
     with head_col2:
         if ticker_final in st.session_state.watchlist:
-            if st.button("❌ Remove", use_container_width=True):
+            if st.button("❌ Remove Watchlist", use_container_width=True):
                 st.session_state.watchlist.remove(ticker_final)
                 if "selected_ticker" in st.session_state:
                     del st.session_state["selected_ticker"]
                 st.rerun()
         else:
-            if len(st.session_state.watchlist) >= 10:
-                st.caption("⚠️ Full")
-            else:
+            if len(st.session_state.watchlist) < 10:
                 if st.button("⭐ Add Watchlist", use_container_width=True):
                     st.session_state.watchlist.append(ticker_final)
                     st.rerun()
@@ -189,7 +192,6 @@ else:
                 return f"{((current - prior) / prior) * 100:.1f}%"
             return "N/A"
 
-        # 모바일 가독성을 위해 간격을 좁힌 데이터프레임 스타일 적용
         def display_centered_table(df):
             st.dataframe(df, use_container_width=True, hide_index=True)
 
@@ -282,6 +284,7 @@ else:
         if fixed_cost_cur <= 0: fixed_cost_cur = sales_cur * 0.25
         if fixed_cost_pri <= 0: fixed_cost_pri = sales_pri * 0.25
         
+        # [해결 포인트] 사전 차단 및 오타 처리 완료
         cm_cur = sales_cur - cogs_cur
         cm_pri = sales_pri - cogs_pri
         
@@ -296,6 +299,8 @@ else:
         dol_pri = ((sales_pri - cogs_pri) / op_pri) if op_pri != 0 else 1.0
         dfl_cur = (op_cur / (op_cur - max(0, op_exp_cur))) if (op_cur - op_exp_cur) != 0 else 1.0
         dfl_pri = (op_pri / (op_pri - max(0, op_exp_pri))) if (op_pri - op_exp_pri) != 0 else 1.0
+        
+        # [해결 포인트] dtl_pri NameError 오타 수정 완료
         dtl_cur = dol_cur * dfl_cur
         dtl_pri = dol_pri * dfl_pri
 
@@ -308,8 +313,6 @@ else:
         
         per_cur = market_metrics.get('trailingPE', 0.0) or (market_metrics.get('currentPrice', 1.0) / eps_cur if eps_cur != 0 else 0.0)
         pbr_cur = market_metrics.get('priceToBook', 0.0) or (market_metrics.get('currentPrice', 1.0) / bps_cur if bps_cur != 0 else 0.0)
-        ev_to_sales = market_metrics.get('enterpriseToRevenue', 0.0)
-        ev_to_ebitda = market_metrics.get('enterpriseToEbitda', 0.0)
 
         # --- 4개 탭 화면 구성 ---
         tab1, tab2, tab3, tab4 = st.tabs(["📌 Overview", "🏢 Balance Sheet", "📊 Ratios", "📉 Valuation"])
@@ -334,7 +337,6 @@ else:
             st.markdown("---")
             st.header("📋 종합 분석 결과 및 재무 검토 의견")
             
-            # 모바일에서는 세로로 나열되도록 컴포넌트 분리 배치
             if sales_growth_val > 0 and net_growth_val > 0:
                 st.success(f"📈 **성장성 및 수익성:** 전년 대비 매출({sales_growth_val:.1f}%)과 순이익({net_growth_val:.1f}%)이 개선되는 구조입니다.")
             elif sales_growth_val > 0 and net_growth_val <= 0:
@@ -384,8 +386,8 @@ else:
             val_lev_data = {
                 "Parameter Item": [" 공헌이익률", " 손익분기점 매출", " 주당순이익(EPS)", " 주당순자산(BPS)", " PER", " PBR"],
                 f"Cur ({current_year})": [f"{cm_rate_cur*100:.1f}%", f"{bep_sales_cur:,.0f}", f"{eps_cur:,.2f}", f"{bps_cur:,.2f}", f"{per_cur:.1f}x", f"{pbr_cur:.1f}x"],
-                f"Pri ({prior_year})": [f"{calc_growth_raw(cm_cur, cm_pri)}", f"{bep_sales_pri:,.0f}", f"{eps_pri:,.2f}", "N/A", "N/A", "N/A"],
-                "Description": ["CVP Shift", calc_growth_raw(bep_sales_cur, bep_sales_pri), calc_growth_raw(eps_cur, eps_pri), "Capital", "Multiples", "Multiples"]
+                f"Pri ({prior_year})": [f"{cm_rate_pri*100:.1f}%" if cm_rate_pri else "N/A", f"{bep_sales_pri:,.0f}" if bep_sales_pri else "N/A", f"{eps_pri:,.2f}", "N/A", "N/A", "N/A"],
+                "Description": ["CVP Shift", "BEP Growth", calc_growth_raw(eps_cur, eps_pri), "Capital", "Multiples", "Multiples"]
             }
             display_centered_table(pd.DataFrame(val_lev_data))
             
