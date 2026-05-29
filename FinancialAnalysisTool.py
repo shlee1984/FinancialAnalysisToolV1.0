@@ -42,11 +42,10 @@ else:
             except Exception as e:
                 st.sidebar.error("⚠️ Error searching company name.")
 
-# --- 사이드바 검색창 바로 아래 관심종목 UI 배치 ---
+# --- 사이드바 관심종목 클릭 처리 ---
 st.sidebar.markdown("---")
 st.sidebar.subheader("⭐ My Watchlist (Max 10)")
 
-# [배포용 수정] st.rerun() 대신 세션 상태 변경 후 자연스럽게 반영되도록 구조 개선
 for ticker in st.session_state.watchlist[:10]:
     if st.sidebar.button(f"📌 {ticker}", key=f"wl_{ticker}", use_container_width=True):
         st.session_state["selected_ticker"] = ticker
@@ -55,23 +54,47 @@ if "selected_ticker" in st.session_state and st.session_state["selected_ticker"]
     ticker_final = st.session_state["selected_ticker"]
 
 
-# --- yf.Ticker 객체 직렬화를 지원하는 cache_resource 사용 ---
-@st.cache_resource(ttl=3600)
+# --- [수정] 야후 파이낸스 차단 우회 및 직렬화 에러를 방지하는 데이터 로더 ---
+@st.cache_data(ttl=3600)
 def load_financial_data(ticker_symbol):
     try:
+        # 안전하게 Ticker 데이터를 가져오기 위해 구조화
         stock = yf.Ticker(ticker_symbol)
+        
+        # 순수 데이터프레임만 캐싱에 저장 (객체 자체를 리턴하지 않음)
         balance_sheet = stock.balance_sheet
         financials = stock.financials
-        return balance_sheet, financials, stock, stock.info.get('longName', ticker_symbol), True
+        
+        # info 딕셔너리 안전하게 로드
+        info_dict = stock.info
+        comp_name = info_dict.get('longName', ticker_symbol)
+        
+        # 필요한 마켓 멀티플 지표들 추출
+        market_metrics = {
+            'trailingEps': info_dict.get('trailingEps', 0.0),
+            'forwardEps': info_dict.get('forwardEps', 0.0),
+            'bookValue': info_dict.get('bookValue', 0.0),
+            'sharesOutstanding': info_dict.get('sharesOutstanding', 1.0),
+            'trailingPE': info_dict.get('trailingPE', 0.0),
+            'priceToBook': info_dict.get('priceToBook', 0.0),
+            'currentPrice': info_dict.get('currentPrice', 1.0),
+            'enterpriseToRevenue': info_dict.get('enterpriseToRevenue', 0.0),
+            'enterpriseToEbitda': info_dict.get('enterpriseToEbitda', 0.0)
+        }
+        
+        if balance_sheet.empty or financials.empty:
+            return None, None, {}, ticker_symbol, False
+            
+        return balance_sheet, financials, market_metrics, comp_name, True
     except Exception as e:
-        return None, None, None, ticker_symbol, False
+        return None, None, {}, ticker_symbol, False
 
-balance_sheet, financials, stock_obj, comp_name, success = load_financial_data(ticker_final)
+balance_sheet, financials, market_metrics, comp_name, success = load_financial_data(ticker_final)
 
-if not success or balance_sheet is None or balance_sheet.empty or financials is None or financials.empty:
-    st.error(f"⚠️ Could not find sufficient financial data for '{ticker_final}'. Please verify the ticker.")
+if not success or balance_sheet is None or balance_sheet.empty:
+    st.error(f"⚠️ Could not find sufficient financial data for '{ticker_final}'. Please verify the ticker or try again later.")
 else:
-    # --- 현재 검색된 종목을 관심종목에 추가/제거하는 컨트롤 버튼 ---
+    # --- 관심종목 추가/제거 컨트롤 ---
     head_col1, head_col2 = st.columns([3, 1])
     with head_col1:
         st.header(f"{comp_name} ({ticker_final}) - Financial Analysis")
@@ -95,7 +118,7 @@ else:
         current_year = balance_sheet.columns[0].strftime('%Y-%m-%d')
         prior_year = balance_sheet.columns[1].strftime('%Y-%m-%d')
         
-        # 다중 키 매핑을 지원하는 데이터 추출기 함수
+        # Robust 데이터 추출 함수
         def get_row_values_robust(df, keys_list):
             idx_clean = {str(k).strip().lower(): k for k in df.index}
             for key in keys_list:
@@ -123,7 +146,7 @@ else:
             })
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
-        # --- 데이터 매핑 및 로드 ---
+        # --- 데이터 매핑 및 연산 ---
         sales_cur, sales_pri = get_row_values_robust(financials, ['Total Revenue', 'Revenue', 'Operating Revenue'])
         cogs_cur, cogs_pri = get_row_values_robust(financials, ['Cost Of Revenue', 'Cost of Goods Sold', 'CostofRevenue'])
         gp_cur, gp_pri = get_row_values_robust(financials, ['Gross Profit'])
@@ -167,7 +190,7 @@ else:
         re_cur, re_pri = get_row_values_robust(balance_sheet, ['Retained Earnings'])
         te_cur, te_pri = get_row_values_robust(balance_sheet, ['Stockholders Equity', 'Total Stockholders Equity', 'Equity'])
 
-        # --- 고급 연산 및 보완 지표 생성 ---
+        # --- 주요 재무 지표 연산 ---
         sales_growth_val = ((sales_cur - sales_pri) / sales_pri * 100) if sales_pri != 0 else 0
         net_growth_val = ((net_cur - net_pri) / net_pri * 100) if net_pri != 0 else 0
         
@@ -229,19 +252,20 @@ else:
         dtl_cur = dol_cur * dfl_cur
         dtl_pri = dol_pri * dfl_pri
 
-        info = stock_obj.info
-        eps_cur = info.get('trailingEps', 0.0) or (net_cur / info.get('sharesOutstanding', 1.0))
-        eps_pri = info.get('forwardEps', 0.0) or (net_pri / info.get('sharesOutstanding', 1.0))
-        bps_cur = info.get('bookValue', 0.0) or (te_cur / info.get('sharesOutstanding', 1.0))
-        sps_cur = (sales_cur / info.get('sharesOutstanding', 1.0)) if info.get('sharesOutstanding') else 0.0
-        sps_pri = (sales_pri / info.get('sharesOutstanding', 1.0)) if info.get('sharesOutstanding') else 0.0
+        # 사전 추출된 market_metrics 딕셔너리 활용
+        shares_out = market_metrics.get('sharesOutstanding', 1.0)
+        eps_cur = market_metrics.get('trailingEps', 0.0) or (net_cur / shares_out)
+        eps_pri = market_metrics.get('forwardEps', 0.0) or (net_pri / shares_out)
+        bps_cur = market_metrics.get('bookValue', 0.0) or (te_cur / shares_out)
+        sps_cur = (sales_cur / shares_out) if shares_out else 0.0
+        sps_pri = (sales_pri / shares_out) if shares_out else 0.0
         
-        per_cur = info.get('trailingPE', 0.0) or (info.get('currentPrice', 1.0) / eps_cur if eps_cur != 0 else 0.0)
-        pbr_cur = info.get('priceToBook', 0.0) or (info.get('currentPrice', 1.0) / bps_cur if bps_cur != 0 else 0.0)
-        ev_to_sales = info.get('enterpriseToRevenue', 0.0)
-        ev_to_ebitda = info.get('enterpriseToEbitda', 0.0)
+        per_cur = market_metrics.get('trailingPE', 0.0) or (market_metrics.get('currentPrice', 1.0) / eps_cur if eps_cur != 0 else 0.0)
+        pbr_cur = market_metrics.get('priceToBook', 0.0) or (market_metrics.get('currentPrice', 1.0) / bps_cur if bps_cur != 0 else 0.0)
+        ev_to_sales = market_metrics.get('enterpriseToRevenue', 0.0)
+        ev_to_ebitda = market_metrics.get('enterpriseToEbitda', 0.0)
 
-        # --- 4개 탭 구성 ---
+        # --- 4개 탭 화면 구성 ---
         tab1, tab2, tab3, tab4 = st.tabs([
             "📌 Overview & Detailed Earnings", 
             "🏢 Asset, Liability & Equity Structural", 
