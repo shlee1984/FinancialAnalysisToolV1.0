@@ -40,7 +40,6 @@ search_col1, search_col2 = st.columns([1, 2])
 ticker_final = "AAPL"
 
 with search_col1:
-    # 'By Company Name'을 기본값(index=1)으로 설정
     search_type = st.radio("Select Search Method:", ["By Ticker", "By Company Name"], index=1, horizontal=True)
 
 with search_col2:
@@ -113,11 +112,9 @@ def fetch_raw_financial_data(ticker_symbol):
         session = get_highly_secure_session()
         stock = yf.Ticker(ticker_symbol, session=session)
         
-        # 기본연간재무제표 로드 시도
         bs = stock.balance_sheet
         fi = stock.financials
         
-        # 차단 혹은 데이터 누락 시 분기 재무제표로 우회 백업
         if bs is None or bs.empty or fi is None or fi.empty:
             bs = stock.quarterly_balance_sheet
             fi = stock.quarterly_financials
@@ -140,15 +137,16 @@ def fetch_raw_financial_data(ticker_symbol):
             'longName': info.get('longName', ticker_symbol)
         }
         
-        if market_metrics['currentPrice'] == 0.0:
-            hist = stock.history(period="1d")
-            if not hist.empty:
-                market_metrics['currentPrice'] = float(hist['Close'].iloc[-1])
+        # 일목균형표 연산 안정성을 위해 데이터 기간을 1년(1y)으로 확장
+        hist_df = stock.history(period="1y")
+        
+        if market_metrics['currentPrice'] == 0.0 and not hist_df.empty:
+            market_metrics['currentPrice'] = float(hist_df['Close'].iloc[-1])
                 
         bs_df = pd.DataFrame(bs.values, index=bs.index.astype(str), columns=bs.columns.astype(str))
         fi_df = pd.DataFrame(fi.values, index=fi.index.astype(str), columns=fi.columns.astype(str))
         
-        return {"balance_sheet": bs_df, "financials": fi_df, "metrics": market_metrics}
+        return {"balance_sheet": bs_df, "financials": fi_df, "metrics": market_metrics, "history": hist_df}
     except:
         return None
 
@@ -156,11 +154,12 @@ data_bundle = fetch_raw_financial_data(ticker_final)
 stock_news = fetch_google_news_rss(ticker_final)
 
 if not data_bundle:
-    st.error(f"⚠️ '{ticker_final}' 종목의 재무 데이터를 불러오지 못했습니다. 야후 파이낸스 트래픽 제한 또는 서버 응답이 지연되고 있으니 잠시 후 새로고침(F5 또는 Ctrl+R)을 해주시거나 다른 종목을 선택해 주세요.")
+    st.error(f"⚠️ '{ticker_final}' 종목의 재무 데이터를 불러오지 못했습니다. 야후 파이낸스 트래픽 제한 또는 서버 응답이 지연되고 있으니 잠시 후 새로고침(F5)을 해주시거나 다른 종목을 선택해 주세요.")
 else:
     balance_sheet = data_bundle["balance_sheet"]
     financials = data_bundle["financials"]
     market_metrics = data_bundle["metrics"]
+    hist_df = data_bundle["history"]
     comp_name = market_metrics["longName"]
 
     head_col1, head_col2 = st.columns([3, 1])
@@ -197,7 +196,6 @@ else:
                 return f"{((current - prior) / prior) * 100:.1f}%"
             return "N/A"
 
-        # 데이터 안전 바인딩 파트 (정의되지 않은 변수 원천 차단)
         sales_cur, sales_pri = get_row_values_robust(financials, ['Total Revenue', 'Revenue', 'Operating Revenue'])
         cogs_cur, cogs_pri = get_row_values_robust(financials, ['Cost Of Revenue', 'Cost of Goods Sold'])
         gp_cur, gp_pri = get_row_values_robust(financials, ['Gross Profit'])
@@ -222,7 +220,6 @@ else:
         re_cur, re_pri = get_row_values_robust(balance_sheet, ['Retained Earnings'])
         te_cur, te_pri = get_row_values_robust(balance_sheet, ['Stockholders Equity', 'Total Stockholders Equity', '🧬 TOTAL EQUITY'])
 
-        # 비율 및 지표 계산 안전 장치 적용
         sales_growth_val = ((sales_cur - sales_pri) / sales_pri * 100) if sales_pri != 0 else 0.0
         net_growth_val = ((net_cur - net_pri) / net_pri * 100) if net_pri != 0 else 0.0
         debt_to_equity_cur = (tl_cur / te_cur * 100) if te_cur != 0 else 0.0
@@ -268,6 +265,48 @@ else:
         cur_price = market_metrics.get('currentPrice', 0.0)
         per_cur = market_metrics.get('trailingPE', 0.0) or (cur_price / eps_cur if eps_cur != 0 else 0.0)
         pbr_cur = market_metrics.get('priceToBook', 0.0) or (cur_price / bps_cur if bps_cur != 0 else 0.0)
+
+        # ---------------- [ 일목균형표 지표 연산 자동화 ] ----------------
+        ichimoku_ready = False
+        ichimoku_text = "📊 데이터 로드 지연으로 인해 기술적 지표 분석을 불러올 수 없습니다. 잠시 후 다시 시도해 주세요."
+        
+        if not hist_df.empty and len(hist_df) >= 52:
+            # 일목균형표 기본선 구성 연산
+            low_9 = hist_df['Low'].rolling(window=9).min()
+            high_9 = hist_df['High'].rolling(window=9).max()
+            hist_df['Tenkan_Sen'] = (low_9 + high_9) / 2
+
+            low_26 = hist_df['Low'].rolling(window=26).min()
+            high_26 = hist_df['High'].rolling(window=26).max()
+            hist_df['Kijun_Sen'] = (low_26 + high_26) / 2
+
+            hist_df['Senkou_Span_A'] = ((hist_df['Tenkan_Sen'] + hist_df['Kijun_Sen']) / 2).shift(26)
+            
+            low_52 = hist_df['Low'].rolling(window=52).min()
+            high_52_ichimoku = hist_df['High'].rolling(window=52).max()
+            hist_df['Senkou_Span_B'] = ((low_52 + high_52_ichimoku) / 2).shift(26)
+
+            t_curr = hist_df['Tenkan_Sen'].iloc[-1]
+            k_curr = hist_df['Kijun_Sen'].iloc[-1]
+            sa_curr = hist_df['Senkou_Span_A'].dropna().iloc[-1] if not hist_df['Senkou_Span_A'].dropna().empty else 0.0
+            sb_curr = hist_df['Senkou_Span_B'].dropna().iloc[-1] if not hist_df['Senkou_Span_B'].dropna().empty else 0.0
+            
+            lagging_price = hist_df['Close'].iloc[-26] if len(hist_df) >= 26 else cur_price
+
+            if sa_curr != 0.0 and sb_curr != 0.0:
+                ichimoku_ready = True
+                cloud_status = "양운(지지 구름대) 위에" if sa_curr > sb_curr else "의운(저항 구름대) 아래에"
+                position_status = "안정적인 상승 궤도" if cur_price > max(sa_curr, sb_curr) else "하락 저항 압박" if cur_price < min(sa_curr, sb_curr) else "구름대 내부 변동성 조정"
+                
+                cross_status = "🔼 **호전(Bullish):** 전환선이 기준선 상단에 위치하여 단기 매수세가 우세합니다." if t_curr > k_curr else "🔽 **역전(Bearish):** 전환선이 기준선 하단에 위치하여 단기 조정 압력이 존재합니다."
+                lagging_status = "🟢 후행스팬이 과거 주가를 상회하여 긍정적 추세를 지지합니다." if cur_price > lagging_price else "🚨 후행스팬이 과거 주가 아래에 있어 매물 부담이 있습니다."
+
+                ichimoku_text = f"""
+                * **구름대 위치 진단:** 현재 주가는 {cloud_status} 위치하여 **{position_status}** 국면을 지나고 있습니다.
+                * **추세 교차 시그널:** {cross_status} (전환선: ${t_curr:,.2f} / 기준선: ${k_curr:,.2f})
+                * **매물대 저항 및 지지:** 선행스팬A(`${sa_curr:,.2f}`) 및 선행스팬B(`${sb_curr:,.2f}`)가 주요 분기점 역할을 합니다.
+                * **후행 시그널 검증:** {lagging_status}
+                """
 
         tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
             "📌 Overview", "🏢 Balance Sheet", "📊 Ratios", "📉 Valuation", "📰 News", "📝 종합의견 (Report)"
@@ -343,7 +382,7 @@ else:
             report_col1, report_col2 = st.columns(2)
             
             with report_col1:
-                st.subheader("🔍 1. 최근 주가 수준 및 밸류에이션 평가")
+                st.subheader("🔍 1. 최근 주가 수준 및 기술적·밸류에이션 평가")
                 st.metric(label="Current Stock Price", value=f"${cur_price:,.2f}")
                 
                 if price_location_pct >= 80:
@@ -357,8 +396,18 @@ else:
                 * **52주 주가 변동 범위:** ${low_52:,.2f} ~ ${high_52:,.2f} (현재 변동폭의 **{price_location_pct:.1f}%** 지점 위치)
                 * **단기 균형 가격 (50일 평균):** ${avg_50:,.2f}
                 * {status_text}
-                * **멀티플 분석:** 현재 PER 지표는 **{per_cur:.1f}x**, PBR 지표는 **{pbr_cur:.1f}x** 수준입니다. 주당순자산가치(${bps_cur:,.2f}) 대비 시장 프리미엄이 얼마나 형성되어 있는지 체크해 보세요.
+                * **멀티플 분석:** 현재 PER 지표는 **{per_cur:.1f}x**, PBR 지표는 **{pbr_cur:.1f}x** 수준입니다.
                 """)
+                
+                # --- [일목균형표 동적 분석 컴포넌트 출력 구역] ---
+                st.markdown("##### 📐 일목균형표(Ichimoku) 추세 모멘텀 분석")
+                st.info(ichimoku_text)
+                
+                # 차트 데이터 시각화 보강 (데이터가 준비되었을 때 실시간 라인 차트 표기)
+                if ichimoku_ready:
+                    st.markdown("📈 **일목균형표 핵심 지표 트렌드 (최근 60거래일)**")
+                    chart_df = hist_df[['Close', 'Tenkan_Sen', 'Kijun_Sen', 'Senkou_Span_A', 'Senkou_Span_B']].tail(60)
+                    st.line_chart(chart_df)
                 
             with report_col2:
                 st.subheader("📊 2. 핵심 재무 상태 스코어링")
