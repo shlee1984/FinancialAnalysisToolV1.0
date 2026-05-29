@@ -47,7 +47,7 @@ MESSAGES = {
         "by_ticker": "티커(Ticker)로 검색",
         "by_name": "회사명으로 검색",
         "enter_ticker": "미국 주식 티커 입력:",
-        "enter_name": "회사명 입력 (예: Apple, Tesla):",
+        "enter_name": "회사명 입력 (예: Apple, Tesla, Oracle):",
         "select_company": "정확한 회사 선택:",
         "search_error": "⚠️ 검색 한계량 도달 혹은 네트워크 지연이 발생했습니다. 티커 검색 방식을 이용하시면 막힘없이 사용 가능합니다.",
         "fetch_error": "⚠️ 종목의 데이터를 가져오지 못했습니다. 올바른 US 티커 명칭인지 확인하시거나 잠시 후 다시 검색해 주세요.",
@@ -107,7 +107,7 @@ MESSAGES = {
         "by_ticker": "By Ticker",
         "by_name": "By Company Name",
         "enter_ticker": "Enter US Stock Ticker:",
-        "enter_name": "Enter Company Name (e.g., Apple, Tesla):",
+        "enter_name": "Enter Company Name (e.g., Apple, Tesla, Oracle):",
         "select_company": "Select exact company:",
         "search_error": "⚠️ Search limit reached or network delay. Using 'By Ticker' method works without interruption.",
         "fetch_error": "⚠️ Failed to fetch data. Please check if the US ticker is correct or try again later.",
@@ -199,7 +199,7 @@ def get_highly_secure_session():
 
 # 주소 창구 및 검색창 레이아웃
 search_col1, search_col2 = st.columns([1, 2])
-ticker_final = "AAPL"
+ticker_final = "AAPL" # 기본 설정
 
 with search_col1:
     search_type = st.radio(L["search_method"], [L["by_ticker"], L["by_name"]], index=0, horizontal=True)
@@ -209,7 +209,7 @@ with search_col2:
         ticker_input = st.text_input(L["enter_ticker"], "AAPL", key="ticker_input_field", label_visibility="collapsed").upper().strip()
         ticker_final = ticker_input if ticker_input else "AAPL"
     else:
-        company_input = st.text_input(L["enter_name"], "Apple", key="company_input_field", label_visibility="collapsed").strip()
+        company_input = st.text_input(L["enter_name"], "Oracle", key="company_input_field", label_visibility="collapsed").strip()
         if company_input:
             try:
                 custom_session = get_highly_secure_session()
@@ -220,6 +220,7 @@ with search_col2:
                 if target_quotes:
                     options = {f"{q['symbol']} - {q.get('longname', q.get('shortname', 'Unknown'))}": q['symbol'] for q in target_quotes}
                     selected_display = st.selectbox(L["select_company"], list(options.keys()), label_visibility="collapsed")
+                    # [🚨 버그 수정 핵심 지점] 선택된 회사 고유 딕셔너리에서 티커를 동적으로 전달받아 최종 확정합니다.
                     ticker_final = options[selected_display]
                 else:
                     st.error("❌ No companies found.")
@@ -292,6 +293,7 @@ def fetch_raw_financial_data(ticker_symbol):
     except:
         return None
 
+# 최종 도출된 티커 데이터 조회 호출
 data_bundle = fetch_raw_financial_data(ticker_final)
 stock_news = fetch_google_news_rss(ticker_final, st.session_state.lang)
 
@@ -548,7 +550,6 @@ else:
                 with m_col4: st.metric(L["signal"], signal_badge)
                 st.markdown("---")
                 
-                # [🚨 버그 수정 지점] 삼항 연산자를 완전한 조건문 분기로 우회 가공하여 렌더링을 정상화했습니다.
                 st.markdown(f"#### {L['detail_feedback']}")
                 if "위" in signal_badge or "Bullish" in signal_badge:
                     st.success(ichimoku_text)
