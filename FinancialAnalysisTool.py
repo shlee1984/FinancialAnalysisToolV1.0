@@ -40,7 +40,7 @@ search_col1, search_col2 = st.columns([1, 2])
 ticker_final = "AAPL"
 
 with search_col1:
-    # index=1 설정을 통해 'By Company Name'을 기본 선택 상태로 지정합니다.
+    # 'By Company Name'을 기본값(index=1)으로 설정
     search_type = st.radio("Select Search Method:", ["By Ticker", "By Company Name"], index=1, horizontal=True)
 
 with search_col2:
@@ -94,7 +94,7 @@ def fetch_google_news_rss(ticker_symbol):
         if response.status_code == 200:
             root = ET.fromstring(response.content)
             for item in root.findall('.//item')[:12]:
-                title = item.find('title').text if item.find('title') is not None else "No Title"
+                title = item.find('title').text if item.find('title') is not None else "No Title Available"
                 link = item.find('link').text if item.find('link') is not None else "#"
                 pub_date = item.find('pubDate').text if item.find('pubDate') is not None else ""
                 source = item.find('source').text if item.find('source') is not None else "Google News"
@@ -113,14 +113,16 @@ def fetch_raw_financial_data(ticker_symbol):
         session = get_highly_secure_session()
         stock = yf.Ticker(ticker_symbol, session=session)
         
+        # 기본연간재무제표 로드 시도
         bs = stock.balance_sheet
         fi = stock.financials
         
+        # 차단 혹은 데이터 누락 시 분기 재무제표로 우회 백업
         if bs is None or bs.empty or fi is None or fi.empty:
             bs = stock.quarterly_balance_sheet
             fi = stock.quarterly_financials
             
-        if bs is None or bs.empty:
+        if bs is None or bs.empty or fi is None or fi.empty:
             return None
             
         info = stock.info
@@ -154,7 +156,7 @@ data_bundle = fetch_raw_financial_data(ticker_final)
 stock_news = fetch_google_news_rss(ticker_final)
 
 if not data_bundle:
-    st.error(f"⚠️ '{ticker_final}' 종목의 재무 데이터를 불러오지 못했습니다. 야후 파이낸스 트래픽 제한일 수 있으니 다른 종목을 선택하시거나 잠시 후 새로고침(F5) 해주세요.")
+    st.error(f"⚠️ '{ticker_final}' 종목의 재무 데이터를 불러오지 못했습니다. 야후 파이낸스 트래픽 제한 또는 서버 응답이 지연되고 있으니 잠시 후 새로고침(F5 또는 Ctrl+R)을 해주시거나 다른 종목을 선택해 주세요.")
 else:
     balance_sheet = data_bundle["balance_sheet"]
     financials = data_bundle["financials"]
@@ -176,8 +178,8 @@ else:
                     st.rerun()
 
     if balance_sheet.shape[1] >= 2 and financials.shape[1] >= 2:
-        current_year = balance_sheet.columns[0][:4]
-        prior_year = balance_sheet.columns[1][:4]
+        current_year = balance_sheet.columns[0][:7] if len(balance_sheet.columns[0]) > 4 else balance_sheet.columns[0]
+        prior_year = balance_sheet.columns[1][:7] if len(balance_sheet.columns[1]) > 4 else balance_sheet.columns[1]
         
         def get_row_values_robust(df, keys_list):
             idx_clean = {str(k).strip().lower(): k for k in df.index}
@@ -195,53 +197,55 @@ else:
                 return f"{((current - prior) / prior) * 100:.1f}%"
             return "N/A"
 
+        # 데이터 안전 바인딩 파트 (정의되지 않은 변수 원천 차단)
         sales_cur, sales_pri = get_row_values_robust(financials, ['Total Revenue', 'Revenue', 'Operating Revenue'])
         cogs_cur, cogs_pri = get_row_values_robust(financials, ['Cost Of Revenue', 'Cost of Goods Sold'])
         gp_cur, gp_pri = get_row_values_robust(financials, ['Gross Profit'])
         if gp_cur == 0 and sales_cur != 0: 
             gp_cur, gp_pri = sales_cur - cogs_cur, sales_pri - cogs_pri
             
-        sga_cur, sga_pri = get_row_values_robust(financials, ['Selling General And Administrative', 'Selling General Administrative'])
-        op_cur, op_pri = get_row_values_robust(financials, ['Operating Income', 'EBIT'])
+        sga_cur, sga_pri = get_row_values_robust(financials, ['Selling General And Administrative', 'Selling General Administrative', 'Selling General & Administrative Expenses'])
+        op_cur, op_pri = get_row_values_robust(financials, ['Operating Income', 'Operating Income Status', 'EBIT'])
         ebitda_cur, ebitda_pri = get_row_values_robust(financials, ['Normalized EBITDA', 'EBITDA'])
         net_cur, net_pri = get_row_values_robust(financials, ['Net Income', 'Net Income Common Stockholders'])
         
-        cash_cur, cash_pri = get_row_values_robust(balance_sheet, ['Cash And Cash Equivalents', 'Cash'])
-        inv_cur, inv_pri = get_row_values_robust(balance_sheet, ['Inventory', 'Inventories'])
-        ar_cur, ar_pri = get_row_values_robust(balance_sheet, ['Receivables', 'Accounts Receivable'])
-        ap_cur, ap_pri = get_row_values_robust(balance_sheet, ['Payables And Accrued Expenses', 'Accounts Payable'])
+        cash_cur, cash_pri = get_row_values_robust(balance_sheet, ['Cash And Cash Equivalents', 'Cash', 'Cash Cash Equivalents And Short Term Investments'])
+        inv_cur, inv_pri = get_row_values_robust(balance_sheet, ['Inventory', 'Inventories', 'Total Inventories'])
+        ar_cur, ar_pri = get_row_values_robust(balance_sheet, ['Receivables', 'Accounts Receivable', 'Net Receivables'])
+        ap_cur, ap_pri = get_row_values_robust(balance_sheet, ['Payables And Accrued Expenses', 'Accounts Payable', 'Total Payables'])
         
         ca_cur, ca_pri = get_row_values_robust(balance_sheet, ['Current Assets', 'Total Current Assets'])
-        ppe_cur, ppe_pri = get_row_values_robust(balance_sheet, ['Properties', 'Net PPE', 'Property Plant And Equipment'])
+        ppe_cur, ppe_pri = get_row_values_robust(balance_sheet, ['Properties', 'Net PPE', 'Property Plant And Equipment', 'Net Property Plant Equipment'])
         ta_cur, ta_pri = get_row_values_robust(balance_sheet, ['Total Assets', 'Assets'])
         cl_cur, cl_pri = get_row_values_robust(balance_sheet, ['Current Liabilities', 'Total Current Liabilities'])
         tl_cur, tl_pri = get_row_values_robust(balance_sheet, ['Total Liabilities Net Minority Interest', 'Total Liabilities'])
         re_cur, re_pri = get_row_values_robust(balance_sheet, ['Retained Earnings'])
-        te_cur, te_pri = get_row_values_robust(balance_sheet, ['Stockholders Equity', 'Total Stockholders Equity'])
+        te_cur, te_pri = get_row_values_robust(balance_sheet, ['Stockholders Equity', 'Total Stockholders Equity', '🧬 TOTAL EQUITY'])
 
-        sales_growth_val = ((sales_cur - sales_pri) / sales_pri * 100) if sales_pri != 0 else 0
-        net_growth_val = ((net_cur - net_pri) / net_pri * 100) if net_pri != 0 else 0
-        debt_to_equity_cur = (tl_cur / te_cur * 100) if te_cur != 0 else 0
-        debt_to_equity_pri = (tl_pri / te_pri * 100) if te_pri != 0 else 0
-        current_ratio_cur = (ca_cur / cl_cur) if cl_cur != 0 else 0
-        current_ratio_pri = (ca_pri / cl_pri) if cl_pri != 0 else 0
+        # 비율 및 지표 계산 안전 장치 적용
+        sales_growth_val = ((sales_cur - sales_pri) / sales_pri * 100) if sales_pri != 0 else 0.0
+        net_growth_val = ((net_cur - net_pri) / net_pri * 100) if net_pri != 0 else 0.0
+        debt_to_equity_cur = (tl_cur / te_cur * 100) if te_cur != 0 else 0.0
+        debt_to_equity_pri = (tl_pri / te_pri * 100) if te_pri != 0 else 0.0
+        current_ratio_cur = (ca_cur / cl_cur) if cl_cur != 0 else 0.0
+        current_ratio_pri = (ca_pri / cl_pri) if cl_pri != 0 else 0.0
         
-        quick_ratio_cur = ((ca_cur - inv_cur) / cl_cur) if cl_cur != 0 else 0
-        quick_ratio_pri = ((ca_pri - inv_pri) / cl_pri) if cl_pri != 0 else 0
+        quick_ratio_cur = ((ca_cur - inv_cur) / cl_cur) if cl_cur != 0 else 0.0
+        quick_ratio_pri = ((ca_pri - inv_pri) / cl_pri) if cl_pri != 0 else 0.0
         
-        inv_turnover_cur = (cogs_cur / inv_cur) if inv_cur != 0 else 0
-        inv_turnover_pri = (cogs_pri / inv_pri) if inv_pri != 0 else 0
-        ar_turnover_cur = (sales_cur / ar_cur) if ar_cur != 0 else 0
-        ar_turnover_pri = (sales_pri / ar_pri) if ar_pri != 0 else 0
+        inv_turnover_cur = (cogs_cur / inv_cur) if inv_cur != 0 else 0.0
+        inv_turnover_pri = (cogs_pri / inv_pri) if inv_pri != 0 else 0.0
+        ar_turnover_cur = (sales_cur / ar_cur) if ar_cur != 0 else 0.0
+        ar_turnover_pri = (sales_pri / ar_pri) if ar_pri != 0 else 0.0
         
-        days_inv_cur = 365 / inv_turnover_cur if inv_turnover_cur != 0 else 0
-        days_ar_cur = 365 / ar_turnover_cur if ar_turnover_cur != 0 else 0
-        days_ap_cur = 365 / ((cogs_cur / ap_cur) if ap_cur != 0 else 1)
+        days_inv_cur = 365 / inv_turnover_cur if inv_turnover_cur != 0 else 0.0
+        days_ar_cur = 365 / ar_turnover_cur if ar_turnover_cur != 0 else 0.0
+        days_ap_cur = 365 / ((cogs_cur / ap_cur) if ap_cur != 0 else 1.0)
         ccc_cur = (days_inv_cur + days_ar_cur) - days_ap_cur
         
-        days_inv_pri = 365 / inv_turnover_pri if inv_turnover_pri != 0 else 0
-        days_ar_pri = 365 / ar_turnover_pri if ar_turnover_pri != 0 else 0
-        days_ap_pri = 365 / ((cogs_pri / ap_pri) if ap_pri != 0 else 1)
+        days_inv_pri = 365 / inv_turnover_pri if inv_turnover_pri != 0 else 0.0
+        days_ar_pri = 365 / ar_turnover_pri if ar_turnover_pri != 0 else 0.0
+        days_ap_pri = 365 / ((cogs_pri / ap_pri) if ap_pri != 0 else 1.0)
         ccc_pri = (days_inv_pri + days_ar_pri) - days_ap_pri
 
         fixed_cost_cur = max((sales_cur - gp_cur) - op_cur, sales_cur * 0.2)
@@ -250,11 +254,11 @@ else:
         cm_cur = sales_cur - cogs_cur
         cm_pri = sales_pri - cogs_pri
         
-        cm_rate_cur = (cm_cur / sales_cur) if sales_cur != 0 else 0
-        cm_rate_pri = (cm_pri / sales_pri) if sales_pri != 0 else 0
+        cm_rate_cur = (cm_cur / sales_cur) if sales_cur != 0 else 0.0
+        cm_rate_pri = (cm_pri / sales_pri) if sales_pri != 0 else 0.0
         
-        bep_sales_cur = (fixed_cost_cur / cm_rate_cur) if cm_rate_cur != 0 else 0
-        bep_sales_pri = (fixed_cost_pri / cm_rate_pri) if cm_rate_pri != 0 else 0
+        bep_sales_cur = (fixed_cost_cur / cm_rate_cur) if cm_rate_cur != 0 else 0.0
+        bep_sales_pri = (fixed_cost_pri / cm_rate_pri) if cm_rate_pri != 0 else 0.0
 
         shares_out = market_metrics.get('sharesOutstanding', 1.0)
         eps_cur = market_metrics.get('trailingEps', 0.0) or (net_cur / shares_out)
@@ -393,4 +397,4 @@ else:
             투자 결정은 투자자의 고유한 판단과 책임하에 이루어져야 하며, 이에 따른 손익 또한 투자자 본인에게 귀속됩니다.
             """)
     else:
-        st.warning("📊 Not enough historical data to compare Current vs Prior periods.")
+        st.warning("📊 재무 데이터의 열 개수가 비교 분석하기에 충분하지 않습니다. 야후 파이낸스 가동 한계선 도달 시 발생하는 오류일 수 있습니다.")
