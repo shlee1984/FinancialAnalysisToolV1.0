@@ -30,7 +30,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📊 Corporate Financial Analysis Tool")
-st.caption("Advanced Financial Diagnostics System - Comprehensive 10-Q/10-K Structural Mapping")
+st.caption("Advanced Financial Diagnostics System - Comprehensive Technical & Fundamental Structural Mapping")
 st.markdown("---")
 
 if "watchlist" not in st.session_state:
@@ -78,7 +78,7 @@ st.markdown("---")
 def get_highly_secure_session():
     session = requests.Session()
     session.headers.update({
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, healthiest/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9,ko-KR;q=0.8,ko;q=0.7',
         'Connection': 'keep-alive'
@@ -137,7 +137,6 @@ def fetch_raw_financial_data(ticker_symbol):
             'longName': info.get('longName', ticker_symbol)
         }
         
-        # 일목균형표 연산 안정성을 위해 데이터 기간을 1년(1y)으로 확장
         hist_df = stock.history(period="1y")
         
         if market_metrics['currentPrice'] == 0.0 and not hist_df.empty:
@@ -266,12 +265,14 @@ else:
         per_cur = market_metrics.get('trailingPE', 0.0) or (cur_price / eps_cur if eps_cur != 0 else 0.0)
         pbr_cur = market_metrics.get('priceToBook', 0.0) or (cur_price / bps_cur if bps_cur != 0 else 0.0)
 
-        # ---------------- [ 일목균형표 지표 연산 자동화 ] ----------------
+        # =========================================================================
+        # 📊 [핵심 수정] 일목균형표 종목별 완전 동적 데이터 연동 로직
+        # =========================================================================
         ichimoku_ready = False
-        ichimoku_text = "📊 데이터 로드 지연으로 인해 기술적 지표 분석을 불러올 수 없습니다. 잠시 후 다시 시도해 주세요."
+        ichimoku_text = "📊 데이터 축적량이 부족하여 기술적 지표 진단을 생성할 수 없습니다."
+        signal_badge = "🔄 분석중"
         
         if not hist_df.empty and len(hist_df) >= 52:
-            # 일목균형표 기본선 구성 연산
             low_9 = hist_df['Low'].rolling(window=9).min()
             high_9 = hist_df['High'].rolling(window=9).max()
             hist_df['Tenkan_Sen'] = (low_9 + high_9) / 2
@@ -295,21 +296,57 @@ else:
 
             if sa_curr != 0.0 and sb_curr != 0.0:
                 ichimoku_ready = True
-                cloud_status = "양운(지지 구름대) 위에" if sa_curr > sb_curr else "의운(저항 구름대) 아래에"
-                position_status = "안정적인 상승 궤도" if cur_price > max(sa_curr, sb_curr) else "하락 저항 압박" if cur_price < min(sa_curr, sb_curr) else "구름대 내부 변동성 조정"
                 
-                cross_status = "🔼 **호전(Bullish):** 전환선이 기준선 상단에 위치하여 단기 매수세가 우세합니다." if t_curr > k_curr else "🔽 **역전(Bearish):** 전환선이 기준선 하단에 위치하여 단기 조정 압력이 존재합니다."
-                lagging_status = "🟢 후행스팬이 과거 주가를 상회하여 긍정적 추세를 지지합니다." if cur_price > lagging_price else "🚨 후행스팬이 과거 주가 아래에 있어 매물 부담이 있습니다."
+                # 1. 구름대와 현재 주가 파악 문장 동적 조립
+                if cur_price > max(sa_curr, sb_curr):
+                    cloud_status = f"양운/의운 구름대 상단(정상 범위인 ${max(sa_curr, sb_curr):,.2f}) 위"
+                    position_status = "확고한 정배열형 상승 추세"
+                elif cur_price < min(sa_curr, sb_curr):
+                    cloud_status = f"구름대 하단(지지 마지노선인 ${min(sa_curr, sb_curr):,.2f}) 아래"
+                    position_status = "매물대 저항 압박에 직면한 하락 위험"
+                else:
+                    cloud_status = f"선행스팬 가두리권 범위(${min(sa_curr, sb_curr):,.2f} ~ ${max(sa_curr, sb_curr):,.2f}) 내부"
+                    position_status = "단기 방향성 탐색을 위한 구름대 내 횡보 조정"
+                
+                # 2. 전환선과 기준선 교차 여부 문장 동적 조립
+                if t_curr > k_curr:
+                    cross_status = f"🔼 **호전(Bullish) 지속:** 단기 전환선(${t_curr:,.2f})이 중기 기준선(${k_curr:,.2f}) 위에 위치하여 단기 매수세가 여전히 강하게 유지되고 있습니다."
+                elif t_curr < k_curr:
+                    cross_status = f"🔽 **역전(Bearish) 발생:** 단기 전환선(${t_curr:,.2f})이 중기 기준선(${k_curr:,.2f})을 하회하여, 최근 매물대 출하로 인한 단기 추세 악화 및 가격 조정이 진행 중입니다."
+                else:
+                    cross_status = f"🔀 **수렴(Neutral):** 전환선과 기준선이 ${t_curr:,.2f} 부근에서 일치하여 대규모 시세 분출을 앞두고 에너지를 응축 중입니다."
+                
+                # 3. 후행스팬 위치 해석 문장 동적 조립
+                if cur_price > lagging_price:
+                    lagging_status = f"🟢 **후행스팬 우위:** 현재 주가가 26거래일 전 주가(${lagging_price:,.2f})보다 높으므로 추세 모멘텀의 복원력이 높은 상태입니다."
+                else:
+                    lagging_status = f"🚨 **후행스팬 부담:** 현재 주가가 26거래일 전 주가(${lagging_price:,.2f}) 아래에 갇혀 있어, 과거에 매수한 보유자들의 악성 매물대 소화 과정이 추가로 필요합니다."
 
+                # 4. 종목별 종합 계량 시그널 평점화
+                score = 0
+                if cur_price > max(sa_curr, sb_curr): score += 2
+                elif cur_price >= min(sa_curr, sb_curr): score += 1
+                if t_curr > k_curr: score += 1
+                if cur_price > lagging_price: score += 1
+
+                if score >= 3:
+                    signal_badge = "🟢 매수 우위 (Bullish Trend)"
+                elif score == 2:
+                    signal_badge = "🟡 관망/중립 (Neutral Box)"
+                else:
+                    signal_badge = "🚨 리스크 관리 (Bearish Shock)"
+
+                # 최종 결합 (각 종목별 실시간 변수값을 완벽하게 바인딩)
                 ichimoku_text = f"""
-                * **구름대 위치 진단:** 현재 주가는 {cloud_status} 위치하여 **{position_status}** 국면을 지나고 있습니다.
-                * **추세 교차 시그널:** {cross_status} (전환선: ${t_curr:,.2f} / 기준선: ${k_curr:,.2f})
-                * **매물대 저항 및 지지:** 선행스팬A(`${sa_curr:,.2f}`) 및 선행스팬B(`${sb_curr:,.2f}`)가 주요 분기점 역할을 합니다.
+                * **구름대 위치 진단:** 현재 {ticker_final} 주가는 {cloud_status}에 위치하고 있으며, 현재 구간은 **{position_status}** 국면으로 해석됩니다.
+                * **추세 교차 시그널:** {cross_status}
+                * **매물대 지지선 파악:** 선행스팬A는 `${sa_curr:,.2f}`, 선행스팬B는 `${sb_curr:,.2f}`에 형성되어 있어, 향후 강한 변동성 지지 또는 저항선 역할을 담당하게 됩니다.
                 * **후행 시그널 검증:** {lagging_status}
                 """
 
-        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-            "📌 Overview", "🏢 Balance Sheet", "📊 Ratios", "📉 Valuation", "📰 News", "📝 종합의견 (Report)"
+        # ---------------- [ 탭 레이아웃 렌더링 ] ----------------
+        tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+            "📌 Overview", "📐 Ichimoku Indicator", "🏢 Balance Sheet", "📊 Ratios", "📉 Valuation", "📰 News", "📝 종합의견 (Report)"
         ])
         
         with tab1:
@@ -326,7 +363,40 @@ else:
             chart_data = pd.DataFrame({'Current': [sales_cur, op_cur, net_cur], 'Prior': [sales_pri, op_pri, net_pri]}, index=['Sales', 'Operating', 'Net Income'])
             st.bar_chart(chart_data)
 
+        # 🎯 개별 맞춤형 분석 결과가 100% 매칭되어 표출되는 전용 분석 탭
         with tab2:
+            st.subheader(f"📐 {ticker_final} ({comp_name}) 일목균형표 기술적 분석")
+            
+            if ichimoku_ready:
+                m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+                with m_col1:
+                    st.metric("현재 주가", f"${cur_price:,.2f}")
+                with m_col2:
+                    delta_tk = t_curr - k_curr
+                    st.metric("전환선 (단기 추세선)", f"${t_curr:,.2f}", f"{delta_tk:+.2f} (vs 기준선)")
+                with m_col3:
+                    st.metric("기준선 (중기 균형선)", f"${k_curr:,.2f}")
+                with m_col4:
+                    st.metric("일목 종합 판단 시그널", signal_badge)
+
+                st.markdown("---")
+                st.markdown("#### 🔍 실시간 차트 세부 진단 피드백")
+                
+                # 분석 결과 성격에 맞는 알림창 동적 적용
+                if "매수 우위" in signal_badge:
+                    st.success(ichimoku_text)
+                elif "관망" in signal_badge:
+                    st.warning(ichimoku_text)
+                else:
+                    st.error(ichimoku_text)
+                
+                st.markdown("#### 📈 핵심 지표 시각화 트렌드 (최근 60거래일 동향)")
+                chart_df = hist_df[['Close', 'Tenkan_Sen', 'Kijun_Sen', 'Senkou_Span_A', 'Senkou_Span_B']].tail(60)
+                st.line_chart(chart_df, use_container_width=True)
+            else:
+                st.info(ichimoku_text)
+
+        with tab3:
             st.subheader("Balance Sheet Summary")
             bs_summary_data = {
                 "Component": ["💵 Cash", "🤝 Receivables", "📦 Inventories", "🗂️ CURRENT ASSETS", "🏢 PPE", "💎 TOTAL ASSETS", "🛑 CURRENT LIAB", "💼 TOTAL LIABILITIES", "📈 Retained Earnings", "🧬 TOTAL EQUITY"],
@@ -336,7 +406,7 @@ else:
             }
             st.dataframe(pd.DataFrame(bs_summary_data), use_container_width=True, hide_index=True)
 
-        with tab3:
+        with tab4:
             st.subheader("Liquidity & Cycles")
             ratio_data = {
                 "Metric Indicator": [" 부채비율", " 유동비율", " 당좌비율", " 재고자산회전율", " 매출채권회전율", " 현금전환주기"],
@@ -346,7 +416,7 @@ else:
             }
             st.dataframe(pd.DataFrame(ratio_data), use_container_width=True, hide_index=True)
 
-        with tab4:
+        with tab5:
             st.subheader("CVP & Valuation Multiples")
             val_lev_data = {
                 "Parameter Item": [" 공헌이익률", " 손익분기점 매출", " 주당순이익(EPS)", " 주당순자산(BPS)", " PER", " PBR"],
@@ -356,7 +426,7 @@ else:
             }
             st.dataframe(pd.DataFrame(val_lev_data), use_container_width=True, hide_index=True)
             
-        with tab5:
+        with tab6:
             st.subheader(f"📰 Latest News for {ticker_final}")
             if stock_news:
                 for article in stock_news[:10]:
@@ -369,7 +439,7 @@ else:
             else:
                 st.info("ℹ️ 현재 제공된 실시간 뉴스가 없습니다.")
 
-        with tab6:
+        with tab7:
             st.header("📝 실시간 재무·주가 종합 진단 보고서")
             st.caption(f"대상 기업: {comp_name} ({ticker_final})")
             st.markdown("---")
@@ -399,15 +469,9 @@ else:
                 * **멀티플 분석:** 현재 PER 지표는 **{per_cur:.1f}x**, PBR 지표는 **{pbr_cur:.1f}x** 수준입니다.
                 """)
                 
-                # --- [일목균형표 동적 분석 컴포넌트 출력 구역] ---
+                # 종합의견 탭에서도 개별 종목의 연동 텍스트가 정상 출력되도록 바인딩
                 st.markdown("##### 📐 일목균형표(Ichimoku) 추세 모멘텀 분석")
                 st.info(ichimoku_text)
-                
-                # 차트 데이터 시각화 보강 (데이터가 준비되었을 때 실시간 라인 차트 표기)
-                if ichimoku_ready:
-                    st.markdown("📈 **일목균형표 핵심 지표 트렌드 (최근 60거래일)**")
-                    chart_df = hist_df[['Close', 'Tenkan_Sen', 'Kijun_Sen', 'Senkou_Span_A', 'Senkou_Span_B']].tail(60)
-                    st.line_chart(chart_df)
                 
             with report_col2:
                 st.subheader("📊 2. 핵심 재무 상태 스코어링")
