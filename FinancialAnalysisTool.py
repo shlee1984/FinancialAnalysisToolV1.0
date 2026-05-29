@@ -55,35 +55,41 @@ if "selected_ticker" in st.session_state and st.session_state["selected_ticker"]
     ticker_final = st.session_state["selected_ticker"]
 
 
-# --- [🚨 핵심 패치] 야후 파이낸스 서버 차단 우회용 세션 커스텀 함수 ---
-def get_headers_session():
+# --- 야후 파이낸스 차단 우회용 가상 세션 헤더 설정 ---
+def get_highly_secure_session():
     session = requests.Session()
-    # 브라우저인 것처럼 속여 야후 파이낸스 서버 차단을 우회하는 헤더 설정
     session.headers.update({
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Cache-Control': 'max-age=0',
+        'Connection': 'keep-alive'
     })
     return session
 
 
-# --- UnserializableReturnValueError 해결을 위한 cache_data 커스텀 래퍼 ---
-@st.cache_data(ttl=3600)
+# --- 캐싱 시스템 전면 수정 (UnserializableReturnValueError 원천 차단) ---
+@st.cache_resource(ttl=600)  # cache_data 대신 복잡한 객체 처리가 가능한 cache_resource 사용
 def load_financial_data(ticker_symbol):
     try:
-        custom_session = get_headers_session()
-        stock = yf.Ticker(ticker_symbol, session=custom_session)
+        secure_session = get_highly_secure_session()
+        stock = yf.Ticker(ticker_symbol, session=secure_session)
         
-        # 캐싱이 가능한 순수 데이터프레임만 추출
         balance_sheet = stock.balance_sheet
         financials = stock.financials
         
         if balance_sheet is None or balance_sheet.empty or financials is None or financials.empty:
-            return None, None, {}, ticker_symbol, False
+            balance_sheet = stock.quarterly_balance_sheet
+            financials = stock.quarterly_financials
+            if balance_sheet is None or balance_sheet.empty or financials is None or financials.empty:
+                return None, None, {}, ticker_symbol, False
             
-        # 가벼운 딕셔너리 형태로 필요한 정보만 구조화
-        info_dict = stock.info
-        comp_name = info_dict.get('longName', ticker_symbol)
+        try:
+            info_dict = stock.info
+            comp_name = info_dict.get('longName', ticker_symbol)
+        except:
+            info_dict = {}
+            comp_name = ticker_symbol
         
         market_metrics = {
             'trailingEps': info_dict.get('trailingEps', 0.0),
@@ -105,7 +111,7 @@ def load_financial_data(ticker_symbol):
 balance_sheet, financials, market_metrics, comp_name, success = load_financial_data(ticker_final)
 
 if not success or balance_sheet is None or balance_sheet.empty:
-    st.error(f"⚠️ Could not find sufficient financial data for '{ticker_final}'. 야후 파이낸스 서버 응답이 지연되고 있습니다. 잠시 후 새로고침(R)을 눌러주세요.")
+    st.error(f"⚠️ Could not find sufficient financial data for '{ticker_final}'. 야후 파이낸스 서버가 일시적으로 연결을 제한했습니다. 사이드바에서 다른 종목을 클릭하시거나 잠시 후 새로고침(Ctrl + R)을 해주세요.")
 else:
     # --- 관심종목 추가/제거 컨트롤 ---
     head_col1, head_col2 = st.columns([3, 1])
@@ -243,6 +249,7 @@ else:
         stop_cycle_pri = days_inv_pri + days_ar_pri
         ccc_pri = stop_cycle_pri - days_ap_pri
 
+        # --- NameError 원인 방어 분석 구문 ---
         fixed_cost_cur = (sales_cur - gp_cur) - op_cur
         fixed_cost_pri = (sales_pri - gp_pri) - op_pri
         if fixed_cost_cur <= 0: fixed_cost_cur = sales_cur * 0.25
@@ -265,7 +272,6 @@ else:
         dtl_cur = dol_cur * dfl_cur
         dtl_pri = dol_pri * dfl_pri
 
-        # 사전 추출된 market_metrics 딕셔너리 안전하게 매핑
         shares_out = market_metrics.get('sharesOutstanding', 1.0)
         eps_cur = market_metrics.get('trailingEps', 0.0) or (net_cur / shares_out)
         eps_pri = market_metrics.get('forwardEps', 0.0) or (net_pri / shares_out)
@@ -278,7 +284,7 @@ else:
         ev_to_sales = market_metrics.get('enterpriseToRevenue', 0.0)
         ev_to_ebitda = market_metrics.get('enterpriseToEbitda', 0.0)
 
-        # --- 4개 탭 화면 구성 ---
+        # --- 대시보드 화면 구성 (4개 탭) ---
         tab1, tab2, tab3, tab4 = st.tabs([
             "📌 Overview & Detailed Earnings", 
             "🏢 Asset, Liability & Equity Structural", 
