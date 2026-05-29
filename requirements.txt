@@ -1,6 +1,5 @@
 streamlit
 yfinance
-# 표준 라이브러리인 pandas와 numpy는 streamlit 설치 시 대개 자동 포함되지만, 
-# 명확히 적어주는 것이 좋습니다.
 pandas
 numpy
+requests
