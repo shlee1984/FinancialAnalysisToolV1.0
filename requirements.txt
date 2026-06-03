@@ -4,5 +4,5 @@ pandas>=2.0.0
 numpy>=1.24.0
 requests>=2.31.0
 finance-datareader>=0.9.202
-opendartreader>=0.5.34
+opendartreader==0.3.2
 python-dotenv>=1.0.0
