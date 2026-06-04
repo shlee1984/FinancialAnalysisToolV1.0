@@ -14,8 +14,8 @@ if python_packages_path not in sys.path:
 
 import streamlit as st
 
-if "lang" not in st.session.state:
-    st.session.state.lang = "ko"
+if "lang" not in st.session_state:
+    st.session_state.lang = "ko"
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -208,25 +208,25 @@ except:
 
 title_col, lang_col = st.columns([3, 1])
 with title_col:
-    st.title(MESSAGES[st.session.state.lang]["title"])
-    st.caption(MESSAGES[st.session.state.lang]["subtitle"])
+    st.title(MESSAGES[st.session_state.lang]["title"])
+    st.caption(MESSAGES[st.session_state.lang]["subtitle"])
 
 with lang_col:
     st.write("<div class='lang-container'>", unsafe_allow_html=True)
     btn_ko, btn_en = st.columns(2)
     with btn_ko:
         if st.button("한글", use_container_width=True):
-            st.session.state.lang = "ko"
+            st.session_state.lang = "ko"
             st.rerun()
     with btn_en:
         if st.button("English", use_container_width=True):
-            st.session.state.lang = "en"
+            st.session_state.lang = "en"
             st.rerun()
     st.write("</div>", unsafe_allow_html=True)
 
 st.markdown("---")
 
-L = MESSAGES[st.session.state.lang]
+L = MESSAGES[st.session_state.lang]
 
 # 시장 선택 UI
 market_col1, market_col2 = st.columns([1, 3])
@@ -235,14 +235,14 @@ with market_col1:
 with market_col2:
     m_btn_us, m_btn_kr = st.columns(2)
     with m_btn_us:
-        us_type = "primary" if st.session.state.market == "us" else "secondary"
+        us_type = "primary" if st.session_state.market == "us" else "secondary"
         if st.button(L["market_us"], use_container_width=True, type=us_type):
-            st.session.state.market = "us"
+            st.session_state.market = "us"
             st.rerun()
     with m_btn_kr:
-        kr_type = "primary" if st.session.state.market == "kr" else "secondary"
+        kr_type = "primary" if st.session_state.market == "kr" else "secondary"
         if st.button(L["market_kr"], use_container_width=True, type=kr_type):
-            st.session.state.market = "kr"
+            st.session_state.market = "kr"
             st.rerun()
 
 st.markdown("---")
@@ -295,13 +295,13 @@ def get_currency_symbol(market: str) -> str:
 
 # 검색 UI 레이아웃
 search_col1, search_col2 = st.columns([1, 2])
-ticker_final = "AAPL" if st.session.state.market == "us" else "005380"
+ticker_final = "AAPL" if st.session_state.market == "us" else "005380"
 
 with search_col1:
     search_type = st.radio(L["search_method"], [L["by_ticker"], L["by_name"]], index=0, horizontal=True)
 
 with search_col2:
-    if st.session.state.market == "us":
+    if st.session_state.market == "us":
         if search_type == L["by_ticker"]:
             ticker_input = st.text_input(L["enter_ticker"], "AAPL", label_visibility="collapsed").upper().strip()
             ticker_final = ticker_input if ticker_input else "AAPL"
@@ -329,8 +329,8 @@ with search_col2:
                 do_search = st.button("검색", use_container_width=True)
 
             if do_search and kr_name_input:
-                st.session.state["kr_search_query"] = kr_name_input
-                st.session.state["kr_search_results"] = search_krx_by_name(kr_name_input)
+                st.session_state["kr_search_query"] = kr_name_input
+                st.session_state["kr_search_results"] = search_krx_by_name(kr_name_input)
 
             kr_options = st.session.state.get("kr_search_results", {})
             if kr_options:
@@ -343,7 +343,7 @@ st.markdown("---")
 
 def fetch_google_news_rss(ticker_symbol, lang_mode):
     news_items = []
-    search_term = ticker_symbol.replace(".KS", "").replace(".KQ", "") if st.session.state.market == "kr" else ticker_symbol
+    search_term = ticker_symbol.replace(".KS", "").replace(".KQ", "") if st.session_state.market == "kr" else ticker_symbol
     try:
         hl_gl = "hl=ko&gl=KR&ceid=KR:ko" if lang_mode == "ko" else "hl=en-US&gl=US&ceid=US:en"
         url = f"https://news.google.com/rss/search?q={search_term}+stock&{hl_gl}"
@@ -534,7 +534,7 @@ stock_news = fetch_google_news_rss(ticker_final, st.session_state.lang)
 if data_bundle == "NO_API_KEY":
     st.error("사이드바에 DART API Key를 입력해야 한국 주식 데이터를 불러올 수 있습니다.")
 elif not data_bundle:
-    err_key = "fetch_error_kr" if st.session.state.market == "kr" else "fetch_error"
+    err_key = "fetch_error_kr" if st.session_state.market == "kr" else "fetch_error"
     st.error(L[err_key])
 else:
     balance_sheet = data_bundle["balance_sheet"]
@@ -650,8 +650,8 @@ else:
 
         # 일목균형표 계산
         ichimoku_ready = False
-        ichimoku_text = "📊 데이터 축적량이 부족하여 기술적 지표 진단을 생성할 수 없습니다." if st.session.state.lang == "ko" else "📊 Data is insufficient to generate Ichimoku analysis."
-        signal_badge = "🔄 분석중" if st.session.state.lang == "ko" else "🔄 Processing"
+        ichimoku_text = "📊 데이터 축적량이 부족하여 기술적 지표 진단을 생성할 수 없습니다." if st.session_state.lang == "ko" else "📊 Data is insufficient to generate Ichimoku analysis."
+        signal_badge = "🔄 분석중" if st.session_state.lang == "ko" else "🔄 Processing"
 
         if not hist_df.empty and len(hist_df) >= 52:
             low_9 = hist_df['Low'].rolling(window=9).min()
