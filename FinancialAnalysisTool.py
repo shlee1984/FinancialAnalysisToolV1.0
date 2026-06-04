@@ -201,7 +201,7 @@ MESSAGES = {
 # --- 사이드바: DART API 설정 (백엔드에서만 작동, UI 숨김) ---
 # Streamlit Secrets 또는 환경 변수에서 API 키 로드
 try:
-dart_api_key = st.secrets["DART_API_KEY"]
+    dart_api_key = st.secrets["DART_API_KEY"]
 except:
     dart_api_key = os.getenv("DART_API_KEY", "")
 
@@ -343,7 +343,7 @@ st.markdown("---")
 
 def fetch_google_news_rss(ticker_symbol, lang_mode):
     news_items = []
-    search_term = ticker_symbol.replace(".KS", "").replace(".KQ", "") if st.session_state.market == "kr" else ticker_symbol
+    search_term = ticker_symbol.replace(".KS", "").replace(".KQ", "") if st.session.state.market == "kr" else ticker_symbol
     try:
         hl_gl = "hl=ko&gl=KR&ceid=KR:ko" if lang_mode == "ko" else "hl=en-US&gl=US&ceid=US:en"
         url = f"https://news.google.com/rss/search?q={search_term}+stock&{hl_gl}"
@@ -528,13 +528,13 @@ def fetch_raw_financial_data(ticker_symbol, market, dart_key):
         return None
 
 # 데이터 조회
-data_bundle = fetch_raw_financial_data(ticker_final, st.session_state.market, dart_api_key)
-stock_news = fetch_google_news_rss(ticker_final, st.session_state.lang)
+data_bundle = fetch_raw_financial_data(ticker_final, st.session.state.market, dart_api_key)
+stock_news = fetch_google_news_rss(ticker_final, st.session.state.lang)
 
 if data_bundle == "NO_API_KEY":
     st.error("사이드바에 DART API Key를 입력해야 한국 주식 데이터를 불러올 수 있습니다.")
 elif not data_bundle:
-    err_key = "fetch_error_kr" if st.session_state.market == "kr" else "fetch_error"
+    err_key = "fetch_error_kr" if st.session.state.market == "kr" else "fetch_error"
     st.error(L[err_key])
 else:
     balance_sheet = data_bundle["balance_sheet"]
@@ -650,8 +650,8 @@ else:
 
         # 일목균형표 계산
         ichimoku_ready = False
-        ichimoku_text = "📊 데이터 축적량이 부족하여 기술적 지표 진단을 생성할 수 없습니다." if st.session_state.lang == "ko" else "📊 Data is insufficient to generate Ichimoku analysis."
-        signal_badge = "🔄 분석중" if st.session_state.lang == "ko" else "🔄 Processing"
+        ichimoku_text = "📊 데이터 축적량이 부족하여 기술적 지표 진단을 생성할 수 없습니다." if st.session.state.lang == "ko" else "📊 Data is insufficient to generate Ichimoku analysis."
+        signal_badge = "🔄 분석중" if st.session.state.lang == "ko" else "🔄 Processing"
 
         if not hist_df.empty and len(hist_df) >= 52:
             low_9 = hist_df['Low'].rolling(window=9).min()
@@ -676,7 +676,7 @@ else:
             if sa_curr != 0.0 and sb_curr != 0.0:
                 ichimoku_ready = True
 
-                if st.session_state.lang == "ko":
+                if st.session.state.lang == "ko":
                     if cur_price > max(sa_curr, sb_curr):
                         cloud_status, position_status = f"구름대 상단({CURRENCY}{max(sa_curr, sb_curr):,.2f}) 위", "확고한 정배열형 상승 추세"
                     elif cur_price < min(sa_curr, sb_curr):
@@ -710,13 +710,13 @@ else:
                 if chikou_current > past_close_26: score += 1
 
                 if score >= 3:
-                    signal_badge = "🟢 매수 우위" if st.session_state.lang == "ko" else "🟢 Bullish Trend"
+                    signal_badge = "🟢 매수 우위" if st.session.state.lang == "ko" else "🟢 Bullish Trend"
                 elif score == 2:
-                    signal_badge = "🟡 관망/중립" if st.session_state.lang == "ko" else "🟡 Neutral Box"
+                    signal_badge = "🟡 관망/중립" if st.session.state.lang == "ko" else "🟡 Neutral Box"
                 else:
-                    signal_badge = "🚨 리스크 관리" if st.session_state.lang == "ko" else "🚨 Bearish Shock"
+                    signal_badge = "🚨 리스크 관리" if st.session.state.lang == "ko" else "🚨 Bearish Shock"
 
-                if st.session_state.lang == "ko":
+                if st.session.state.lang == "ko":
                     ichimoku_text = f"""
                     * **구름대 위치 진단:** 현재 주가는 {cloud_status}에 위치하고 있으며, 현재 구간은 **{position_status}** 국면으로 해석됩니다.
                     * **추세 교차 시그널:** {cross_status}
