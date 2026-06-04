@@ -54,10 +54,10 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 2. 다국어 세션 상태 초기화 및 딕셔너리 정의
-if "market" not in st.session.state:
-    st.session.state.market = "kr"
-if "lang" not in st.session.state:
-    st.session.state.lang = "ko"
+if "market" not in st.session_state:
+    st.session_state.market = "kr"
+if "lang" not in st.session_state:
+    st.session_state.lang = "ko"
 
 MESSAGES = {
     "ko": {
@@ -526,8 +526,8 @@ def fetch_raw_financial_data(ticker_symbol, market, dart_key):
         return None
 
 # 데이터 조회
-data_bundle = fetch_raw_financial_data(ticker_final, st.session.state.market, dart_api_key)
-stock_news = fetch_google_news_rss(ticker_final, st.session.state.lang)
+data_bundle = fetch_raw_financial_data(ticker_final, st.session_state.market, dart_api_key)
+stock_news = fetch_google_news_rss(ticker_final, st.session_state.lang)
 
 if data_bundle == "NO_API_KEY":
     st.error("사이드바에 DART API Key를 입력해야 한국 주식 데이터를 불러올 수 있습니다.")
