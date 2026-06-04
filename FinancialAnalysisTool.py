@@ -204,6 +204,10 @@ except:
     dart_api_key = os.getenv("DART_API_KEY", "")
 
 # 3. 타이틀 및 다국어 버튼 레이아웃 구성
+# lang 초기화 (세션 상태에 없는 경우)
+if "lang" not in st.session.state:
+    st.session.state.lang = "ko"
+
 title_col, lang_col = st.columns([3, 1])
 with title_col:
     st.title(MESSAGES[st.session.state.lang]["title"])
