@@ -54,12 +54,10 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 2. 다국어 세션 상태 초기화 및 딕셔너리 정의
-if "lang" not in st.session_state:
-    st.session_state.lang = "ko"
-
-# 시장 선택 세션 초기화
-if "market" not in st.session_state:
-    st.session_state.market = "us"  # "us" 또는 "kr"
+if "market" not in st.session.state:
+    st.session.state.market = "kr"
+if "lang" not in st.session.state:
+    st.session.state.lang = "ko"
 
 MESSAGES = {
     "ko": {
@@ -208,25 +206,25 @@ except:
 # 3. 타이틀 및 다국어 버튼 레이아웃 구성
 title_col, lang_col = st.columns([3, 1])
 with title_col:
-    st.title(MESSAGES[st.session_state.lang]["title"])
-    st.caption(MESSAGES[st.session_state.lang]["subtitle"])
+    st.title(MESSAGES[st.session.state.lang]["title"])
+    st.caption(MESSAGES[st.session.state.lang]["subtitle"])
 
 with lang_col:
     st.write("<div class='lang-container'>", unsafe_allow_html=True)
     btn_ko, btn_en = st.columns(2)
     with btn_ko:
         if st.button("한글", use_container_width=True):
-            st.session_state.lang = "ko"
+            st.session.state.lang = "ko"
             st.rerun()
     with btn_en:
         if st.button("English", use_container_width=True):
-            st.session_state.lang = "en"
+            st.session.state.lang = "en"
             st.rerun()
     st.write("</div>", unsafe_allow_html=True)
 
 st.markdown("---")
 
-L = MESSAGES[st.session_state.lang]
+L = MESSAGES[st.session.state.lang]
 
 # 시장 선택 UI
 market_col1, market_col2 = st.columns([1, 3])
@@ -235,14 +233,14 @@ with market_col1:
 with market_col2:
     m_btn_us, m_btn_kr = st.columns(2)
     with m_btn_us:
-        us_type = "primary" if st.session_state.market == "us" else "secondary"
+        us_type = "primary" if st.session.state.market == "us" else "secondary"
         if st.button(L["market_us"], use_container_width=True, type=us_type):
-            st.session_state.market = "us"
+            st.session.state.market = "us"
             st.rerun()
     with m_btn_kr:
-        kr_type = "primary" if st.session_state.market == "kr" else "secondary"
+        kr_type = "primary" if st.session.state.market == "kr" else "secondary"
         if st.button(L["market_kr"], use_container_width=True, type=kr_type):
-            st.session_state.market = "kr"
+            st.session.state.market = "kr"
             st.rerun()
 
 st.markdown("---")
@@ -295,13 +293,13 @@ def get_currency_symbol(market: str) -> str:
 
 # 검색 UI 레이아웃
 search_col1, search_col2 = st.columns([1, 2])
-ticker_final = "AAPL" if st.session_state.market == "us" else "005380"
+ticker_final = "AAPL" if st.session.state.market == "us" else "005380"
 
 with search_col1:
     search_type = st.radio(L["search_method"], [L["by_ticker"], L["by_name"]], index=0, horizontal=True)
 
 with search_col2:
-    if st.session_state.market == "us":
+    if st.session.state.market == "us":
         if search_type == L["by_ticker"]:
             ticker_input = st.text_input(L["enter_ticker"], "AAPL", label_visibility="collapsed").upper().strip()
             ticker_final = ticker_input if ticker_input else "AAPL"
@@ -329,10 +327,10 @@ with search_col2:
                 do_search = st.button("검색", use_container_width=True)
 
             if do_search and kr_name_input:
-                st.session_state["kr_search_query"] = kr_name_input
-                st.session_state["kr_search_results"] = search_krx_by_name(kr_name_input)
+                st.session.state["kr_search_query"] = kr_name_input
+                st.session.state["kr_search_results"] = search_krx_by_name(kr_name_input)
 
-            kr_options = st.session_state.get("kr_search_results", {})
+            kr_options = st.session.state.get("kr_search_results", {})
             if kr_options:
                 selected_kr = st.selectbox(L["select_company"], list(kr_options.keys()), label_visibility="collapsed")
                 ticker_final = kr_options[selected_kr]
