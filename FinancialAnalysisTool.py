@@ -201,7 +201,7 @@ MESSAGES = {
 # --- 사이드바: DART API 설정 (백엔드에서만 작동, UI 숨김) ---
 # Streamlit Secrets 또는 환경 변수에서 API 키 로드
 try:
-    dart_api_key = st.secrets.get("DART_API_KEY", os.getenv("DART_API_KEY", ""))
+dart_api_key = st.secrets["DART_API_KEY"]
 except:
     dart_api_key = os.getenv("DART_API_KEY", "")
 
